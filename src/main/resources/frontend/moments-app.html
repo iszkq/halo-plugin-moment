@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light">
   <title>瞬间</title>
-  <link rel="stylesheet" href="/plugins/moment-circle/static/v1.2.5/moments-app.css">
+  <link rel="stylesheet" href="/plugins/moment-circle/static/v1.2.6/moments-app.css">
 </head>
 <body>
   <div class="main-wrapper">
@@ -41,7 +41,15 @@
 
   <div id="viewer" class="viewer is-hidden" aria-hidden="true">
     <button id="viewer-close" class="viewer__close" type="button" aria-label="关闭预览">×</button>
-    <div id="viewer-body" class="viewer__body"></div>
+    <button id="viewer-prev" class="viewer__nav viewer__nav--prev" type="button" aria-label="上一张">‹</button>
+    <div class="viewer__dialog">
+      <div class="viewer__topbar">
+        <span id="viewer-counter" class="viewer__counter"></span>
+      </div>
+      <div id="viewer-body" class="viewer__body"></div>
+      <div id="viewer-thumbs" class="viewer__thumbs"></div>
+    </div>
+    <button id="viewer-next" class="viewer__nav viewer__nav--next" type="button" aria-label="下一张">›</button>
   </div>
 
   <div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true"></div>
@@ -55,6 +63,6 @@
       homePath: "/moments"
     };
   </script>
-  <script src="/plugins/moment-circle/static/v1.2.5/moments-app.js" defer></script>
+  <script src="/plugins/moment-circle/static/v1.2.6/moments-app.js" defer></script>
 </body>
 </html>

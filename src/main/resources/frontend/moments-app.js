@@ -1,81 +1,1291 @@
-const APP=window.__MOMENT_CIRCLE__||{},HOME_PATH=APP.homePath||"/moments",COMMENT_API_BASE=APP.commentApiBase||"/apis/api.halo.run/v1alpha1/comments",METRICS_API_BASE=APP.metricsApiBase||"/apis/api.halo.run/v1alpha1/trackers",CURRENT_USER_ENDPOINT="/apis/api.console.halo.run/v1alpha1/users/-";
-const root=document.getElementById("app-root"),tagStrip=document.getElementById("tag-strip"),footer=document.getElementById("page-footer"),heroCover=document.getElementById("hero-cover"),heroAvatarImage=document.getElementById("hero-avatar-image"),heroTitle=document.getElementById("hero-title"),heroSignature=document.getElementById("hero-signature"),detailNav=document.getElementById("detail-nav"),toolbarBack=document.getElementById("toolbar-back"),viewer=document.getElementById("viewer"),viewerBody=document.getElementById("viewer-body"),viewerClose=document.getElementById("viewer-close"),toastHost=document.getElementById("toast-host");
-const state={moments:new Map(),likes:readStorage("momentCircle.likes",{}),profile:readStorage("momentCircle.commentProfile",{displayName:"",email:"",website:""}),currentUser:null,openPopover:null};
+const APP = window.__MOMENT_CIRCLE__ || {};
+const HOME_PATH = APP.homePath || "/moments";
+const COMMENT_API_BASE =
+  APP.commentApiBase || "/apis/api.halo.run/v1alpha1/comments";
+const METRICS_API_BASE =
+  APP.metricsApiBase || "/apis/api.halo.run/v1alpha1/trackers";
+const CURRENT_USER_ENDPOINT = "/apis/api.console.halo.run/v1alpha1/users/-";
+const COMMENT_WIDGET_MODULES = [
+  "https://cdn.jsdelivr.net/npm/@halo-dev/comment-widget@3.1.0/dist/index.js",
+  "https://unpkg.com/@halo-dev/comment-widget@3.1.0/dist/index.js",
+];
 
-document.addEventListener("DOMContentLoaded",()=>{bindViewer();document.addEventListener("click",e=>{if(!e.target.closest(".action-wrapper"))closePopover();});boot().catch(e=>{console.error(e);renderError(`瞬间页面加载失败：${escapeHtml(e.message||"未知错误")}`);});});
+const root = document.getElementById("app-root");
+const tagStrip = document.getElementById("tag-strip");
+const footer = document.getElementById("page-footer");
+const heroCover = document.getElementById("hero-cover");
+const heroAvatarImage = document.getElementById("hero-avatar-image");
+const heroTitle = document.getElementById("hero-title");
+const heroSignature = document.getElementById("hero-signature");
+const detailNav = document.getElementById("detail-nav");
+const toolbarBack = document.getElementById("toolbar-back");
+const viewer = document.getElementById("viewer");
+const viewerBody = document.getElementById("viewer-body");
+const viewerClose = document.getElementById("viewer-close");
+const viewerPrev = document.getElementById("viewer-prev");
+const viewerNext = document.getElementById("viewer-next");
+const viewerCounter = document.getElementById("viewer-counter");
+const viewerThumbs = document.getElementById("viewer-thumbs");
+const toastHost = document.getElementById("toast-host");
 
-async function boot(){const cfg=normalizeConfig(await getJson(APP.configEndpoint));await loadCurrentUser();applyPageConfig(cfg);const route=resolveRoute();if(route.view==="detail"){detailNav.classList.remove("is-hidden");toolbarBack.href=HOME_PATH;tagStrip.classList.add("is-hidden");await renderDetailPage(route.name,cfg);return;}detailNav.classList.add("is-hidden");renderTagStrip(cfg.tags,route.tag);await renderListPage(route.page,route.tag,cfg);}
-async function loadCurrentUser(){try{const detail=await getJson(CURRENT_USER_ENDPOINT),user=detail?.user||detail,spec=user?.spec||{},meta=user?.metadata||{},displayName=String(spec.displayName||meta.name||"").trim(),email=String(spec.email||"").trim();if(!displayName)return;state.currentUser={displayName,email,avatar:spec.avatar||"",name:meta.name||displayName};state.profile={displayName,email,website:""};writeStorage("momentCircle.commentProfile",state.profile);}catch(_){state.currentUser=null;}}
-function resolveRoute(){const p=(window.location.pathname||HOME_PATH).replace(/\/+$/,"")||HOME_PATH,tag=new URLSearchParams(window.location.search).get("tag")||"",prefixes=[HOME_PATH,"/friend-circle","/plugins/moment-circle/view"];for(const prefix of prefixes){if(p===prefix||p==="")return{view:"list",page:1,tag};const m=p.match(new RegExp(`^${escapeRegExp(prefix)}/page/(\\d+)$`));if(m)return{view:"list",page:Number(m[1])||1,tag};if(p.startsWith(`${prefix}/`))return{view:"detail",name:decodeURIComponent(p.slice(prefix.length+1)),tag};}return{view:"list",page:1,tag};}
+const state = {
+  moments: new Map(),
+  likes: readStorage("momentCircle.likes", {}),
+  currentUser: null,
+  commentWidgetReady: false,
+  commentWidgetPromise: null,
+  viewer: {
+    images: [],
+    index: 0,
+    previousOverflow: "",
+  },
+};
 
-async function renderListPage(page,tag,cfg){root.className="moments-feed";const url=new URL(`${APP.apiBase}/moments`,window.location.origin);url.searchParams.set("page",String(page));url.searchParams.set("size",String(cfg.pageSize));if(tag)url.searchParams.set("tag",tag);const result=await getJson(url.toString()),items=Array.isArray(result.items)?result.items:[];items.forEach(cacheMoment);document.title=tag?`${tag} - ${cfg.title}`:cfg.title;if(!items.length){root.innerHTML=`<section class="empty-panel"><h2>这里还没有内容</h2><p>${tag?`标签 #${escapeHtml(tag)} 下暂时没有瞬间。`:"先去后台发布一条瞬间试试看吧。"}</p></section>`;return;}root.innerHTML=`${items.map(renderMomentCard).join("")}${renderPager(result,tag)}`;bindPage();await Promise.allSettled(items.map(m=>loadFeedActivity(nameOf(m))));}
-async function renderDetailPage(name,cfg){root.className="moments-feed single-view";const m=await getJson(`${APP.apiBase}/moments/${encodeURIComponent(name)}`);cacheMoment(m);document.title=`${deriveMomentTitle(m)} - ${cfg.title}`;root.innerHTML=`<article class="single-article"><div class="article-body"><header class="article-header"><h1 class="article-title">${escapeHtml(deriveMomentTitle(m))}</h1><div class="article-meta"><span>${escapeHtml(m.owner?.displayName||m.owner?.name||"匿名用户")}</span><span class="meta-dot">·</span><span>${formatDateTime(m.spec?.releaseTime)}</span></div></header><div class="article-text">${renderRaw(m.spec?.content?.html,m.spec?.content?.raw)}</div>${renderDetailGallery(m)}<div class="article-extra"><span data-upvote-label="${ea(nameOf(m))}">赞 ${Number(m.stats?.upvote||0)}</span><span data-comment-label="${ea(nameOf(m))}">评 ${Number(m.stats?.approvedComment||0)}</span>${renderTagText(m.spec?.tags)}</div><section class="detail-actions"><div class="detail-actions-meta"><span>可直接使用 Halo 公共接口点赞和评论</span></div><div class="detail-actions-buttons"><button class="detail-action-btn ${liked(nameOf(m))?"is-liked":""}" type="button" data-action="like" data-name="${ea(nameOf(m))}">${liked(nameOf(m))?"取消点赞":"点赞"}</button><button class="detail-action-btn" type="button" data-action="jump-comments">评论</button></div></section><section class="detail-comments" id="comments"><div class="detail-comments-header"><h2 class="detail-comments-title">评论</h2><span class="detail-comments-subtitle">登录用户自动带昵称，游客只需填写昵称</span></div><div class="comment-form-card" id="comment-form">${renderCommentForm(nameOf(m),false)}</div><div class="comment-list-shell" data-detail-comments="${ea(nameOf(m))}"><section class="loading-panel"><div class="loading-panel__glow"></div><p>评论加载中...</p></section></div></section></div></article>`;bindPage();await loadDetailComments(nameOf(m));}
+document.addEventListener("DOMContentLoaded", () => {
+  bindViewer();
+  bindGlobalEvents();
+  boot().catch((error) => {
+    console.error(error);
+    renderError(`瞬间页面加载失败：${escapeHtml(error.message || "未知错误")}`);
+  });
+});
 
-function renderMomentCard(m){const name=nameOf(m),owner=eh(m.owner?.displayName||m.owner?.name||"匿名用户"),avatar=m.owner?.avatar||fallbackAvatar(m.owner?.displayName||m.owner?.name||"瞬"),detail=`${HOME_PATH}/${encodeURIComponent(name)}`;return`<article class="moment-card" id="moment-${ea(name)}"><aside class="moment-aside"><a class="avatar-link" href="${detail}"><img class="avatar-img" src="${ea(avatar)}" alt="${owner}" loading="lazy"></a></aside><div class="moment-body"><h2 class="moment-author"><a href="${detail}">${owner}</a></h2><div class="moment-text-wrapper"><div class="moment-text is-collapsed">${renderRaw(m.spec?.content?.html,m.spec?.content?.raw)}</div><button class="text-toggle" type="button">全文</button></div>${renderFeedGallery(photosOf(m))}${renderMediaStack(otherMediaOf(m))}<footer class="moment-footer"><div class="footer-meta"><span class="moment-time">${formatDate(m.spec?.releaseTime)}</span>${renderTags(m.spec?.tags)}</div><div class="footer-actions"><span class="moment-stat" data-upvote-label="${ea(name)}">赞 ${Number(m.stats?.upvote||0)}</span><span class="moment-stat" data-comment-label="${ea(name)}">评 ${Number(m.stats?.approvedComment||0)}</span><div class="action-wrapper"><button class="action-toggle" type="button" aria-label="操作菜单" data-action="menu" data-name="${ea(name)}"></button><div class="action-popover" data-menu="${ea(name)}"><button class="popover-btn ${liked(name)?"is-active":""}" type="button" data-action="like" data-name="${ea(name)}">${liked(name)?"取消点赞":"点赞"}</button><span class="popover-divider"></span><button class="popover-btn" type="button" data-action="comment" data-name="${ea(name)}">评论</button></div></div><a class="moment-detail-link" href="${detail}">详情</a></div></footer><div class="moment-comments-area feed-comments" data-feed-comments="${ea(name)}"></div><div class="feed-comment-editor is-hidden" data-feed-editor="${ea(name)}"><div class="comment-form-card">${renderCommentForm(name,true)}</div></div></div></article>`;}
-function renderCommentForm(name,compact){const loggedIn=!!state.currentUser;return`<form class="comment-form ${compact?"compact":""}" data-comment-form data-name="${ea(name)}">${loggedIn?`<div class="current-user-note">当前登录身份：<span class="current-user-name">${eh(state.currentUser.displayName)}</span></div>`:`<div class="comment-form-grid"><label class="form-field"><span class="form-label">昵称</span><input class="form-input" type="text" name="displayName" maxlength="32" placeholder="怎么称呼你"></label></div>`}<label class="form-field"><span class="form-label">评论内容</span><textarea class="form-textarea" name="content" placeholder="说点什么吧..." maxlength="2000"></textarea></label><div class="comment-form-actions"><span class="comment-form-tip">${loggedIn?"将以当前登录身份评论":"游客只需填写昵称即可评论"}</span><button class="comment-submit" type="submit">发布评论</button></div><div class="comment-status" data-comment-status></div></form>`;}
+function bindGlobalEvents() {
+  const refresh = () => {
+    const names = Array.from(state.moments.keys());
+    if (!names.length) {
+      return;
+    }
+    Promise.allSettled(
+      names.map(async (name) => {
+        await refreshMoment(name);
+        await loadFeedActivity(name);
+      })
+    ).catch((error) => {
+      console.warn(error);
+    });
+  };
+  window.addEventListener("halo:comment:created", refresh);
+  window.addEventListener("halo:comment-reply:created", refresh);
+}
 
-function bindPage(){bindToggles();bindViewerTargets();bindMenus();bindLikes();bindCommentButtons();bindForms();prefillForms();syncDisplays();}
-function bindToggles(){root.querySelectorAll(".moment-text-wrapper").forEach(w=>{const t=w.querySelector(".moment-text"),b=w.querySelector(".text-toggle");if(!t||!b)return;if(t.scrollHeight>t.clientHeight+8){b.style.display="inline-block";b.onclick=()=>{const c=t.classList.toggle("is-collapsed");b.textContent=c?"全文":"收起";};}});}
-function bindViewerTargets(){root.querySelectorAll("[data-viewer-src]").forEach(i=>i.addEventListener("click",()=>openViewer(i.getAttribute("data-viewer-src")||"")));}
-function bindMenus(){root.querySelectorAll('[data-action="menu"]').forEach(b=>b.addEventListener("click",e=>{e.stopPropagation();const menu=find(`[data-menu="${sel(b.getAttribute("data-name")||"")}"]`);if(!menu)return;if(state.openPopover&&state.openPopover!==menu)state.openPopover.classList.remove("is-visible");const show=!menu.classList.contains("is-visible");menu.classList.toggle("is-visible",show);state.openPopover=show?menu:null;}));}
-function bindLikes(){root.querySelectorAll('[data-action="like"]').forEach(b=>b.addEventListener("click",async e=>{e.preventDefault();e.stopPropagation();const name=b.getAttribute("data-name")||"";if(!name||b.disabled)return;b.disabled=true;const isLiked=liked(name);try{await postJson(`${METRICS_API_BASE}/${isLiked?"downvote":"upvote"}`,{group:"moment.halo.run",plural:"moments",name},false);setLiked(name,!isLiked);adjustUpvote(name,isLiked?-1:1);syncOne(name);showToast(isLiked?"已取消点赞":"点赞成功");await refreshMoment(name);}catch(err){console.error(err);showToast(err.message||"点赞失败");}b.disabled=false;closePopover();}));}
-function bindCommentButtons(){root.querySelectorAll('[data-action="comment"]').forEach(b=>b.addEventListener("click",e=>{e.preventDefault();e.stopPropagation();const name=b.getAttribute("data-name")||"",box=find(`[data-feed-editor="${sel(name)}"]`);if(!box){window.location.href=`${HOME_PATH}/${encodeURIComponent(name)}#comment-form`;return;}document.querySelectorAll("[data-feed-editor]").forEach(i=>{if(i!==box)i.classList.add("is-hidden");});box.classList.toggle("is-hidden");if(!box.classList.contains("is-hidden")){prefillForms();const t=box.querySelector('textarea[name="content"]');if(t)window.setTimeout(()=>t.focus(),120);}closePopover();}));root.querySelectorAll('[data-action="jump-comments"]').forEach(b=>b.addEventListener("click",()=>{const t=document.getElementById("comment-form");if(t){t.scrollIntoView({behavior:"smooth",block:"start"});const a=t.querySelector('textarea[name="content"]');if(a)window.setTimeout(()=>a.focus(),180);}}));}
-function bindForms(){root.querySelectorAll("[data-comment-form]").forEach(f=>f.addEventListener("submit",submitComment));}
-function prefillForms(){root.querySelectorAll("[data-comment-form]").forEach(f=>{const d=f.querySelector('[name="displayName"]');if(d&&!d.value)d.value=state.profile.displayName||"";});}
+async function boot() {
+  const config = normalizeConfig(await getJson(APP.configEndpoint));
+  await loadCurrentUser();
+  applyPageConfig(config);
 
-async function submitComment(e){e.preventDefault();const f=e.currentTarget,name=f.getAttribute("data-name")||"",status=f.querySelector("[data-comment-status]"),btn=f.querySelector(".comment-submit"),inputName=f.querySelector('[name="displayName"]')?.value.trim()||"",displayName=(state.currentUser?.displayName||inputName||"").trim(),email=(state.currentUser?.email||"").trim(),content=f.querySelector('[name="content"]')?.value.trim()||"";if(!displayName){setStatus(status,"请先填写昵称。");showToast("请先填写昵称");return;}if(!content){setStatus(status,"评论内容不能为空。");showToast("评论内容不能为空");return;}if(!state.currentUser){state.profile={displayName,email:"",website:""};writeStorage("momentCircle.commentProfile",state.profile);}setStatus(status,"评论提交中...");if(btn)btn.disabled=true;try{const owner={displayName};if(email)owner.email=email;const created=await postJson(COMMENT_API_BASE,{allowNotification:false,content:eh(content).replace(/\n/g,"<br>"),raw:content,subjectRef:{group:"moment.halo.run",kind:"Moment",version:"v1alpha1",name},owner});f.querySelector('[name="content"]').value="";const approved=created?.spec?.approved===true;setStatus(status,approved?"评论发布成功。":"评论已提交。");showToast(approved?"评论发布成功":"评论已提交");await refreshMoment(name);await Promise.allSettled([loadFeedActivity(name),loadDetailComments(name)]);}catch(err){console.error(err);setStatus(status,err.message||"评论提交失败。");showToast(err.message||"评论提交失败");}if(btn)btn.disabled=false;}
+  const route = resolveRoute();
+  if (route.view === "detail") {
+    detailNav.classList.remove("is-hidden");
+    toolbarBack.href = HOME_PATH;
+    tagStrip.classList.add("is-hidden");
+    await renderDetailPage(route.name, config);
+    return;
+  }
 
-async function refreshMoment(name){try{const m=await getJson(`${APP.apiBase}/moments/${encodeURIComponent(name)}`);cacheMoment(m);syncOne(name);}catch(err){console.warn(err);}}
-async function loadFeedActivity(name){const box=find(`[data-feed-comments="${sel(name)}"]`),m=state.moments.get(name);if(!box||!m)return;try{const r=await loadComments(name,1,3,1),items=Array.isArray(r.items)?r.items:[],likeCount=Number(m.stats?.upvote||0);if(!likeCount&&!items.length){box.style.display="none";box.innerHTML="";return;}box.innerHTML=`${likeCount?`<div class="moment-likes"><span class="moment-likes-icon">❤</span><span class="moment-likes-text" data-like-summary="${ea(name)}">${eh(likeText(name,likeCount))}</span></div>`:""}${items.length?`<div class="wechat-comments-list">${items.slice(0,3).map(c=>`<div class="wechat-comment-item"><div class="wechat-main"><span class="wechat-nick">${eh(c.owner?.displayName||c.owner?.name||"游客")}</span><span class="wechat-colon">：</span><span class="wechat-content">${eh(trim(strip(c.spec?.content||c.spec?.raw||""),90))}</span></div><span class="wechat-time">${relativeTime(c.spec?.creationTime)}</span></div>`).join("")}</div>`:""}`;box.style.display="block";}catch(err){console.warn(err);if(Number(m.stats?.upvote||0)>0){box.innerHTML=`<div class="moment-likes"><span class="moment-likes-icon">❤</span><span class="moment-likes-text" data-like-summary="${ea(name)}">${eh(likeText(name,Number(m.stats?.upvote||0)))}</span></div>`;box.style.display="block";}}}
-async function loadDetailComments(name){const box=find(`[data-detail-comments="${sel(name)}"]`);if(!box)return;try{const r=await loadComments(name,1,20,10),items=Array.isArray(r.items)?r.items:[];if(!items.length){box.innerHTML=`<div class="comment-empty">还没有评论，欢迎来聊聊。</div>`;return;}box.innerHTML=`<div class="comment-list">${items.map(c=>renderComment(c)).join("")}</div>`;}catch(err){console.error(err);box.innerHTML=`<section class="error-panel"><h2>评论加载失败</h2><p>${eh(err.message||"未知错误")}</p></section>`;}}
-function renderComment(c){const replies=Array.isArray(c.replies?.items)?c.replies.items:[],owner=eh(c.owner?.displayName||c.owner?.name||"游客"),avatar=c.owner?.avatar||fallbackAvatar(c.owner?.displayName||c.owner?.name||"评");return`<article class="comment-item"><img class="comment-avatar" src="${ea(avatar)}" alt="${owner}" loading="lazy"><div class="comment-body"><div class="comment-header"><span class="comment-name">${owner}</span><span class="comment-time">${formatDateTime(c.spec?.creationTime)}</span></div><div class="comment-html">${renderRaw(c.spec?.content,c.spec?.raw||"")}</div><div class="comment-meta"><span>赞 ${Number(c.stats?.upvote||0)}</span>${replies.length?`<span>回复 ${replies.length}</span>`:""}</div>${replies.length?`<div class="comment-replies">${replies.map(r=>{const n=eh(r.owner?.displayName||r.owner?.name||"游客"),a=r.owner?.avatar||fallbackAvatar(r.owner?.displayName||r.owner?.name||"回");return`<div class="comment-reply"><img class="reply-avatar" src="${ea(a)}" alt="${n}" loading="lazy"><div class="reply-body"><div class="reply-header"><span class="reply-name">${n}</span><span class="reply-time">${formatDateTime(r.spec?.creationTime)}</span></div><div class="reply-html">${renderRaw(r.spec?.content,r.spec?.raw||"")}</div></div></div>`;}).join("")}</div>`:""}</div></article>`;}
+  detailNav.classList.add("is-hidden");
+  renderTagStrip(config.tags, route.tag);
+  await renderListPage(route.page, route.tag, config);
+}
 
-async function loadComments(name,page,size,replySize){const url=new URL(COMMENT_API_BASE,window.location.origin);url.searchParams.set("version","v1alpha1");url.searchParams.set("kind","Moment");url.searchParams.set("group","moment.halo.run");url.searchParams.set("name",name);url.searchParams.set("page",String(page));url.searchParams.set("size",String(size));url.searchParams.set("withReplies","true");url.searchParams.set("replySize",String(replySize));return getJson(url.toString());}
-function cacheMoment(m){state.moments.set(nameOf(m),m);}
-function syncDisplays(){Array.from(state.moments.keys()).forEach(syncOne);}
-function syncOne(name){const m=state.moments.get(name);if(!m)return;findAll(`[data-upvote-label="${sel(name)}"]`).forEach(n=>n.textContent=`赞 ${Number(m.stats?.upvote||0)}`);findAll(`[data-comment-label="${sel(name)}"]`).forEach(n=>n.textContent=`评 ${Number(m.stats?.approvedComment||0)}`);findAll(`[data-like-summary="${sel(name)}"]`).forEach(n=>n.textContent=likeText(name,Number(m.stats?.upvote||0)));findAll(`[data-name="${sel(name)}"]`).filter(n=>n.matches('[data-action="like"]')).forEach(n=>{const on=liked(name);n.classList.toggle("is-liked",on);n.classList.toggle("is-active",on);n.textContent=on?"取消点赞":"点赞";});}
-function adjustUpvote(name,delta){const m=state.moments.get(name);if(!m)return;m.stats=m.stats||{};m.stats.upvote=Math.max(0,Number(m.stats.upvote||0)+delta);}
-function likeText(name,count){if(count<=0)return"";if(!liked(name))return`已有 ${count} 人点赞`;return count===1?"你觉得很赞":`你和其他 ${count-1} 人觉得很赞`;}
+async function loadCurrentUser() {
+  try {
+    const detail = await getJson(CURRENT_USER_ENDPOINT);
+    const user = detail?.user || detail;
+    const spec = user?.spec || {};
+    const metadata = user?.metadata || {};
+    const displayName = String(spec.displayName || metadata.name || "").trim();
+    if (!displayName) {
+      return;
+    }
+    state.currentUser = {
+      displayName,
+      avatar: String(spec.avatar || "").trim(),
+      email: String(spec.email || "").trim(),
+      name: String(metadata.name || displayName).trim(),
+    };
+  } catch (_) {
+    state.currentUser = null;
+  }
+}
 
-function applyPageConfig(c){document.documentElement.style.setProperty("--theme-color",c.accentColor);heroTitle.textContent=c.profileName;heroSignature.textContent=c.signature;heroSignature.style.display=c.signature?"":"none";footer.textContent=c.footerText;heroAvatarImage.src=c.avatarUrl||fallbackAvatar(c.profileName||"瞬");heroCover.style.backgroundImage=c.coverUrl?`url("${ea(c.coverUrl)}")`:"linear-gradient(120deg, #89d5aa 0%, #07c160 100%)";}
-function renderTagStrip(tags,current){const list=Array.isArray(tags)?tags:[];if(!list.length){tagStrip.classList.add("is-hidden");return;}tagStrip.classList.remove("is-hidden");tagStrip.innerHTML=[`<a class="tag-pill ${current?"":"is-active"}" href="${buildListUrl(1,"")}">全部</a>`,...list.map(t=>`<a class="tag-pill ${current===t.name?"is-active":""}" href="${buildListUrl(1,t.name)}"><span>#${eh(t.name||"")}</span><span>${Number(t.momentCount||0)}</span></a>`)].join("");}
-function renderPager(r,tag){if(!r.totalPages||r.totalPages<=1)return"";return`<section class="empty-panel">${r.hasPrevious?`<a class="moment-detail-link" href="${buildListUrl(r.page-1,tag)}">上一页</a>`:""}<span>第 ${r.page} / ${r.totalPages} 页</span>${r.hasNext?`<a class="moment-detail-link" href="${buildListUrl(r.page+1,tag)}">下一页</a>`:""}</section>`;}
-function renderFeedGallery(list){if(!list.length)return"";if(list.length===1)return`<div class="moment-gallery"><div class="gallery-single"><img data-viewer-src="${ea(list[0])}" src="${ea(list[0])}" alt="瞬间图片" loading="lazy"></div></div>`;const cls=list.length===2||list.length===4?"cols-2":"cols-3";return`<div class="moment-gallery"><div class="gallery-grid ${cls}">${list.map(i=>`<div class="gallery-item"><img data-viewer-src="${ea(i)}" src="${ea(i)}" alt="瞬间图片" loading="lazy"></div>`).join("")}</div></div>`;}
-function renderDetailGallery(m){const list=photosOf(m),media=otherMediaOf(m);return`${list.length?`<div class="article-gallery">${list.map(i=>`<figure class="article-image"><img data-viewer-src="${ea(i)}" src="${ea(i)}" alt="瞬间图片" loading="lazy"></figure>`).join("")}</div>`:""}${renderMediaStack(media)}`;}
-function renderMediaStack(items){if(!items.length)return"";return`<div class="moment-media-stack">${items.map(i=>i.type==="VIDEO"?`<video controls preload="metadata" src="${ea(i.url||"")}"></video>`:i.type==="AUDIO"?`<audio controls preload="metadata" src="${ea(i.url||"")}"></audio>`:"").join("")}</div>`;}
-function renderTags(tags){const list=Array.isArray(tags)?tags:[];return list.length?`<span class="moment-tags">${list.map(t=>`<a class="moment-tag" href="${buildListUrl(1,t)}">#${eh(t)}</a>`).join("")}</span>`:"";}
-function renderTagText(tags){const list=Array.isArray(tags)?tags:[];return list.length?`<span>${list.map(t=>`#${eh(t)}`).join(" ")}</span>`:"";}
-function renderRaw(html,raw){return html&&String(html).trim()?html:`<p>${eh(raw||"这条瞬间暂时没有正文。").replace(/\n/g,"<br>")}</p>`;}
+function resolveRoute() {
+  const pathname =
+    (window.location.pathname || HOME_PATH).replace(/\/+$/, "") || HOME_PATH;
+  const tag = new URLSearchParams(window.location.search).get("tag") || "";
+  const prefixes = [HOME_PATH, "/friend-circle", "/plugins/moment-circle/view"];
 
-function photosOf(m){return mediaOf(m).filter(i=>i.type==="PHOTO").map(i=>i.url).filter(Boolean);}function otherMediaOf(m){return mediaOf(m).filter(i=>i.type!=="PHOTO");}function mediaOf(m){const c=m?.spec?.content;return Array.isArray(c?.medium)?c.medium:[];}
-function normalizeConfig(c){return{title:c?.title||"瞬间",pageSize:Number(c?.pageSize||10),profileName:c?.profileName||"恪勤",signature:c?.signature||"",avatarUrl:c?.avatarUrl||"",coverUrl:c?.coverUrl||"",footerText:c?.footerText||"由 Halo 瞬间插件驱动",accentColor:c?.accentColor||"#07c160",tags:Array.isArray(c?.tags)?c.tags:[]};}
-function deriveMomentTitle(m){const t=strip(m?.spec?.content?.html||m?.spec?.content?.raw||"").trim();return t?(t.length>32?`${t.slice(0,32)}...`:t):formatDateTime(m?.spec?.releaseTime);}
-function buildListUrl(page,tag){const p=page>1?`${HOME_PATH}/page/${page}`:HOME_PATH;return tag?`${p}?tag=${encodeURIComponent(tag)}`:p;}
+  for (const prefix of prefixes) {
+    if (pathname === prefix || pathname === "") {
+      return { view: "list", page: 1, tag };
+    }
 
-function bindViewer(){viewerClose.addEventListener("click",closeViewer);viewer.addEventListener("click",e=>{if(e.target===viewer)closeViewer();});document.addEventListener("keydown",e=>{if(e.key==="Escape")closeViewer();});}
-function openViewer(src){if(!src)return;viewerBody.innerHTML=`<img src="${ea(src)}" alt="大图预览">`;viewer.classList.remove("is-hidden");}
-function closeViewer(){viewer.classList.add("is-hidden");viewerBody.innerHTML="";}
-function closePopover(){if(state.openPopover){state.openPopover.classList.remove("is-visible");state.openPopover=null;}}
+    const pageMatch = pathname.match(
+      new RegExp(`^${escapeRegExp(prefix)}/page/(\\d+)$`)
+    );
+    if (pageMatch) {
+      return { view: "list", page: Number(pageMatch[1]) || 1, tag };
+    }
 
-async function getJson(url){return request(url,{method:"GET"},true);}
-async function postJson(url,body,json=true){return request(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)},json);}
-async function request(url,opt,json){const res=await fetch(url,{credentials:"same-origin",headers:{Accept:"application/json",...(opt.headers||{})},...opt});if(!res.ok)throw new Error(await readErr(res));if(!json)return null;const ct=res.headers.get("content-type")||"";return ct.includes("application/json")?res.json():null;}
-async function readErr(res){const fallback=`Request failed: ${res.status}`;try{const text=await res.text();if(!text)return fallback;try{const data=JSON.parse(text);return data.message||data.detail||data.title||data.error||fallback;}catch(_){return text.length>160?fallback:text;}}catch(_){return fallback;}}
+    if (pathname.startsWith(`${prefix}/`)) {
+      return {
+        view: "detail",
+        name: decodeURIComponent(pathname.slice(prefix.length + 1)),
+        tag,
+      };
+    }
+  }
 
-function showToast(msg){if(!toastHost||!msg)return;const n=document.createElement("div");n.className="toast";n.textContent=msg;toastHost.appendChild(n);window.setTimeout(()=>n.remove(),2400);}
-function setStatus(node,msg){if(node)node.textContent=msg||"";}
-function readStorage(key,fallback){try{const raw=localStorage.getItem(key);return raw?JSON.parse(raw):fallback;}catch(_){return fallback;}}
-function writeStorage(key,val){try{localStorage.setItem(key,JSON.stringify(val));}catch(_){}}function liked(name){return!!state.likes?.[name];}
-function setLiked(name,on){state.likes=state.likes||{};if(on)state.likes[name]=true;else delete state.likes[name];writeStorage("momentCircle.likes",state.likes);}
-function nameOf(m){return m?.metadata?.name||"";}
-function fallbackAvatar(text){const ch=(text||"瞬").trim().slice(0,1)||"瞬";return`data:image/svg+xml;charset=UTF-8,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%"><stop stop-color="#7bcfa5" offset="0%"/><stop stop-color="#07c160" offset="100%"/></linearGradient></defs><rect width="120" height="120" rx="18" fill="url(#g)"/><text x="50%" y="56%" text-anchor="middle" dominant-baseline="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="56" fill="#ffffff">${eh(ch)}</text></svg>`)}`;}
-function formatDate(v){if(!v)return"刚刚";const d=new Date(v);if(Number.isNaN(d.getTime()))return v;return new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"numeric",day:"numeric"}).format(d);}
-function formatDateTime(v){if(!v)return"刚刚";const d=new Date(v);if(Number.isNaN(d.getTime()))return v;return new Intl.DateTimeFormat("zh-CN",{year:"numeric",month:"numeric",day:"numeric",hour:"2-digit",minute:"2-digit"}).format(d);}
-function relativeTime(v){if(!v)return"刚刚";const d=new Date(v);if(Number.isNaN(d.getTime()))return v;const diff=Date.now()-d.getTime(),m=6e4,h=36e5,day=864e5;if(diff<m)return"刚刚";if(diff<h)return`${Math.max(1,Math.floor(diff/m))} 分钟前`;if(diff<day)return`${Math.max(1,Math.floor(diff/h))} 小时前`;if(diff<day*2)return"昨天";return`${d.getMonth()+1} 月 ${d.getDate()} 日`;}
-function trim(v,max){const t=String(v||"").trim().replace(/\s+/g," ");return t.length<=max?t:`${t.slice(0,max)}...`;}
-function strip(v){return String(v||"").replace(/<[^>]+>/g," ");}
-function renderError(msg){root.innerHTML=`<section class="error-panel"><h2>加载失败</h2><p>${eh(msg)}</p></section>`;}
-function find(s){return document.querySelector(s);}function findAll(s){return Array.from(document.querySelectorAll(s));}
-function eh(v){return String(v||"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#39;");}
-function ea(v){return eh(v).replaceAll("`","&#96;");}function sel(v){return String(v||"").replaceAll("\\","\\\\").replaceAll('"','\\"');}
-function escapeHtml(v){return eh(v);}function escapeRegExp(v){return String(v).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");}
+  return { view: "list", page: 1, tag };
+}
+
+async function renderListPage(page, tag, config) {
+  root.className = "moments-feed";
+
+  const url = new URL(`${APP.apiBase}/moments`, window.location.origin);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("size", String(config.pageSize));
+  if (tag) {
+    url.searchParams.set("tag", tag);
+  }
+
+  const result = await getJson(url.toString());
+  const items = Array.isArray(result.items) ? result.items : [];
+
+  items.forEach(cacheMoment);
+  document.title = tag ? `${tag} - ${config.title}` : config.title;
+
+  if (!items.length) {
+    root.innerHTML = `<section class="empty-panel"><h2>这里还没有内容</h2><p>${
+      tag
+        ? `标签 #${escapeHtml(tag)} 下暂时没有瞬间。`
+        : "先去后台发布一条瞬间试试看吧。"
+    }</p></section>`;
+    return;
+  }
+
+  root.innerHTML = `${items.map(renderMomentCard).join("")}${renderPager(
+    result,
+    tag
+  )}`;
+  bindPage();
+  await Promise.allSettled(items.map((moment) => loadFeedActivity(nameOf(moment))));
+}
+
+async function renderDetailPage(name, config) {
+  root.className = "moments-feed single-view";
+
+  const moment = await getJson(`${APP.apiBase}/moments/${encodeURIComponent(name)}`);
+  cacheMoment(moment);
+  document.title = `${deriveMomentTitle(moment)} - ${config.title}`;
+
+  root.innerHTML = `<article class="single-article"><div class="article-body"><header class="article-header"><h1 class="article-title">${escapeHtml(
+    deriveMomentTitle(moment)
+  )}</h1><div class="article-meta"><span>${escapeHtml(
+    moment.owner?.displayName || moment.owner?.name || "匿名用户"
+  )}</span><span class="meta-dot">·</span><span>${formatDateTime(
+    moment.spec?.releaseTime
+  )}</span></div></header><div class="article-text">${renderRaw(
+    moment.spec?.content?.html,
+    moment.spec?.content?.raw
+  )}</div>${renderDetailGallery(moment)}<div class="article-extra"><span data-upvote-label="${ea(
+    nameOf(moment)
+  )}">赞 ${Number(moment.stats?.upvote || 0)}</span><span data-comment-label="${ea(
+    nameOf(moment)
+  )}">评 ${Number(moment.stats?.approvedComment || 0)}</span>${renderTagText(
+    moment.spec?.tags
+  )}</div><section class="detail-comments" id="comments"><div class="detail-comments-header"><h2 class="detail-comments-title">评论</h2></div><div class="comment-widget-card" data-detail-widget="${ea(
+    nameOf(moment)
+  )}"><section class="loading-panel"><div class="loading-panel__glow"></div><p>评论组件加载中...</p></section></div></section></div></article>`;
+
+  bindPage();
+  await mountCommentWidget(
+    nameOf(moment),
+    find(`[data-detail-widget="${sel(nameOf(moment))}"]`),
+    false
+  );
+}
+
+function renderMomentCard(moment) {
+  const name = nameOf(moment);
+  const owner = eh(moment.owner?.displayName || moment.owner?.name || "匿名用户");
+  const avatar =
+    moment.owner?.avatar ||
+    fallbackAvatar(moment.owner?.displayName || moment.owner?.name || "瞬");
+  const detailLink = `${HOME_PATH}/${encodeURIComponent(name)}`;
+
+  return `<article class="moment-card" id="moment-${ea(
+    name
+  )}"><aside class="moment-aside"><a class="avatar-link" href="${detailLink}"><img class="avatar-img" src="${ea(
+    avatar
+  )}" alt="${owner}" loading="lazy"></a></aside><div class="moment-body"><h2 class="moment-author"><a href="${detailLink}">${owner}</a></h2><div class="moment-text-wrapper"><div class="moment-text is-collapsed">${renderRaw(
+    moment.spec?.content?.html,
+    moment.spec?.content?.raw
+  )}</div><button class="text-toggle" type="button">全文</button></div>${renderFeedGallery(
+    photosOf(moment)
+  )}${renderMediaStack(otherMediaOf(moment))}<footer class="moment-footer"><div class="footer-meta"><span class="moment-time">${formatDate(
+    moment.spec?.releaseTime
+  )}</span>${renderTags(moment.spec?.tags)}</div><div class="footer-actions moment-actions"><span class="moment-stat" data-upvote-label="${ea(
+    name
+  )}">赞 ${Number(moment.stats?.upvote || 0)}</span><span class="moment-stat" data-comment-label="${ea(
+    name
+  )}">评 ${Number(moment.stats?.approvedComment || 0)}</span><button class="moment-action-btn ${
+    liked(name) ? "is-liked" : ""
+  }" type="button" data-action="like" data-name="${ea(name)}">${
+    liked(name) ? "已赞" : "点赞"
+  }</button><button class="moment-action-btn" type="button" data-action="comment" data-name="${ea(
+    name
+  )}">评论</button><a class="moment-detail-link" href="${detailLink}">详情</a></div></footer><div class="moment-comments-area feed-comments" data-feed-comments="${ea(
+    name
+  )}"></div><div class="feed-comment-panel is-hidden" data-feed-editor="${ea(
+    name
+  )}"><section class="loading-panel"><div class="loading-panel__glow"></div><p>评论组件待展开...</p></section></div></div></article>`;
+}
+
+function bindPage() {
+  bindToggles();
+  bindViewerTargets();
+  bindLikes();
+  bindCommentButtons();
+  syncDisplays();
+}
+
+function bindToggles() {
+  root.querySelectorAll(".moment-text-wrapper").forEach((wrapper) => {
+    const textNode = wrapper.querySelector(".moment-text");
+    const button = wrapper.querySelector(".text-toggle");
+    if (!textNode || !button) {
+      return;
+    }
+    if (textNode.scrollHeight > textNode.clientHeight + 8) {
+      button.style.display = "inline-block";
+      button.onclick = () => {
+        const collapsed = textNode.classList.toggle("is-collapsed");
+        button.textContent = collapsed ? "全文" : "收起";
+      };
+    }
+  });
+}
+
+function bindViewerTargets() {
+  root.querySelectorAll("[data-viewer-list]").forEach((image) => {
+    image.addEventListener("click", () => {
+      const list = parseViewerList(image.getAttribute("data-viewer-list"));
+      if (!list.length) {
+        return;
+      }
+      openViewer(list, Number(image.getAttribute("data-viewer-index") || 0));
+    });
+  });
+}
+
+function bindLikes() {
+  root.querySelectorAll('[data-action="like"]').forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+
+      const name = button.getAttribute("data-name") || "";
+      if (!name || button.disabled) {
+        return;
+      }
+
+      button.disabled = true;
+      const alreadyLiked = liked(name);
+
+      try {
+        await postJson(
+          `${METRICS_API_BASE}/${alreadyLiked ? "downvote" : "upvote"}`,
+          {
+            group: "moment.halo.run",
+            plural: "moments",
+            name,
+          },
+          false
+        );
+        setLiked(name, !alreadyLiked);
+        adjustUpvote(name, alreadyLiked ? -1 : 1);
+        syncOne(name);
+        showToast(alreadyLiked ? "已取消点赞" : "点赞成功");
+        await refreshMoment(name);
+        await loadFeedActivity(name);
+      } catch (error) {
+        console.error(error);
+        showToast(error.message || "点赞失败");
+      }
+
+      button.disabled = false;
+    });
+  });
+}
+
+function bindCommentButtons() {
+  root.querySelectorAll('[data-action="comment"]').forEach((button) => {
+    button.addEventListener("click", async (event) => {
+      event.preventDefault();
+
+      const name = button.getAttribute("data-name") || "";
+      const panel = find(`[data-feed-editor="${sel(name)}"]`);
+      if (!panel) {
+        window.location.href = `${HOME_PATH}/${encodeURIComponent(name)}#comments`;
+        return;
+      }
+
+      const willOpen = panel.classList.contains("is-hidden");
+      document.querySelectorAll("[data-feed-editor]").forEach((node) => {
+        if (node !== panel) {
+          node.classList.add("is-hidden");
+        }
+      });
+
+      if (!willOpen) {
+        panel.classList.add("is-hidden");
+        return;
+      }
+
+      panel.classList.remove("is-hidden");
+      const mounted = await mountCommentWidget(name, panel, true);
+      if (mounted) {
+        await focusCommentWidget(panel);
+      }
+    });
+  });
+}
+
+async function mountCommentWidget(name, host, compact) {
+  if (!host) {
+    return false;
+  }
+
+  if (host.dataset.mounted === "true" && host.querySelector("comment-widget")) {
+    return true;
+  }
+
+  host.innerHTML = `<section class="loading-panel"><div class="loading-panel__glow"></div><p>官方评论组件加载中...</p></section>`;
+  const ready = await ensureCommentWidget();
+  if (!ready) {
+    host.innerHTML = `<section class="error-panel"><h2>评论组件加载失败</h2><p>请稍后刷新页面重试。</p></section>`;
+    return false;
+  }
+
+  host.innerHTML = `<div class="comment-widget-shell${
+    compact ? " is-compact" : ""
+  }"><comment-widget base-url="" group="moment.halo.run" kind="Moment" version="v1alpha1" name="${ea(
+    name
+  )}"></comment-widget></div>`;
+  host.dataset.mounted = "true";
+  return true;
+}
+
+async function focusCommentWidget(host) {
+  for (let attempt = 0; attempt < 24; attempt += 1) {
+    const widget = host.querySelector("comment-widget");
+    const commentForm = widget?.shadowRoot?.querySelector("comment-form");
+    const baseForm = commentForm?.shadowRoot?.querySelector("base-form");
+    if (baseForm && typeof baseForm.setFocus === "function") {
+      baseForm.setFocus();
+      return;
+    }
+    await wait(120);
+  }
+}
+
+async function ensureCommentWidget() {
+  if (state.commentWidgetReady || customElements.get("comment-widget")) {
+    patchCommentWidgetComponents();
+    state.commentWidgetReady = true;
+    return true;
+  }
+
+  if (state.commentWidgetPromise) {
+    return state.commentWidgetPromise;
+  }
+
+  state.commentWidgetPromise = loadCommentWidgetModule()
+    .then(() => {
+      patchCommentWidgetComponents();
+      state.commentWidgetReady = !!customElements.get("comment-widget");
+      return state.commentWidgetReady;
+    })
+    .catch((error) => {
+      console.error(error);
+      state.commentWidgetReady = false;
+      showToast("官方评论组件加载失败");
+      return false;
+    })
+    .finally(() => {
+      state.commentWidgetPromise = null;
+    });
+
+  return state.commentWidgetPromise;
+}
+
+async function loadCommentWidgetModule() {
+  if (customElements.get("comment-widget")) {
+    return;
+  }
+
+  let lastError = null;
+  for (const url of COMMENT_WIDGET_MODULES) {
+    try {
+      await loadModuleScript(url);
+      if (customElements.get("comment-widget")) {
+        return;
+      }
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  throw lastError || new Error("无法加载官方评论组件");
+}
+
+function loadModuleScript(src) {
+  return new Promise((resolve, reject) => {
+    const existing = findAll("script[data-comment-widget-src]").find(
+      (node) => node.dataset.commentWidgetSrc === src
+    );
+
+    if (existing) {
+      if (existing.dataset.loaded === "true") {
+        resolve();
+        return;
+      }
+      existing.addEventListener("load", () => resolve(), { once: true });
+      existing.addEventListener(
+        "error",
+        () => reject(new Error(`无法加载模块：${src}`)),
+        { once: true }
+      );
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.type = "module";
+    script.async = true;
+    script.src = src;
+    script.dataset.commentWidgetSrc = src;
+    script.addEventListener(
+      "load",
+      () => {
+        script.dataset.loaded = "true";
+        resolve();
+      },
+      { once: true }
+    );
+    script.addEventListener(
+      "error",
+      () => {
+        script.remove();
+        reject(new Error(`无法加载模块：${src}`));
+      },
+      { once: true }
+    );
+    document.head.appendChild(script);
+  });
+}
+
+function patchCommentWidgetComponents() {
+  const widgetCtor = customElements.get("comment-widget");
+  if (widgetCtor && !widgetCtor.prototype.__momentCirclePatched) {
+    const originalFetchGlobalInfo = widgetCtor.prototype.fetchGlobalInfo;
+    const originalFetchCurrentUser = widgetCtor.prototype.fetchCurrentUser;
+
+    widgetCtor.prototype.fetchGlobalInfo = async function () {
+      try {
+        await originalFetchGlobalInfo.call(this);
+      } catch (_) {
+        this.allowAnonymousComments = true;
+      }
+    };
+
+    widgetCtor.prototype.fetchConfigMapData = async function () {
+      this.configMapData = buildCommentWidgetConfig();
+    };
+
+    widgetCtor.prototype.fetchCurrentUser = async function () {
+      try {
+        await originalFetchCurrentUser.call(this);
+      } catch (_) {
+        this.currentUser = undefined;
+      }
+    };
+
+    widgetCtor.prototype.__momentCirclePatched = true;
+  }
+
+  const baseFormCtor = customElements.get("base-form");
+  if (baseFormCtor && !baseFormCtor.prototype.__momentCirclePatched) {
+    const originalConnectedCallback = baseFormCtor.prototype.connectedCallback;
+    const originalUpdated = baseFormCtor.prototype.updated;
+
+    baseFormCtor.prototype.connectedCallback = function () {
+      originalConnectedCallback.call(this);
+      window.setTimeout(() => {
+        decorateCommentBaseForm(this);
+      }, 0);
+    };
+
+    baseFormCtor.prototype.updated = function (changedProperties) {
+      if (typeof originalUpdated === "function") {
+        originalUpdated.call(this, changedProperties);
+      }
+      decorateCommentBaseForm(this);
+    };
+
+    baseFormCtor.prototype.onSubmit = function (event) {
+      event.preventDefault();
+
+      const form = event.target;
+      const formData = new FormData(form);
+      const data = Object.fromEntries(formData.entries());
+      const isAnonymous = !this.currentUser && this.allowAnonymousComments;
+
+      if (isAnonymous) {
+        data.displayName = String(data.displayName || "").trim();
+        data.email = String(data.email || "").trim() || guestEmail(data.displayName);
+        data.website = "";
+      }
+
+      localStorage.setItem(
+        "halo-comment-custom-account",
+        JSON.stringify({
+          displayName: isAnonymous ? data.displayName || "" : "",
+          email: "",
+          website: "",
+        })
+      );
+
+      this.debouncedSubmit(data);
+    };
+
+    baseFormCtor.prototype.__momentCirclePatched = true;
+  }
+}
+
+function decorateCommentBaseForm(formElement) {
+  const shadow = formElement?.shadowRoot;
+  if (!shadow) {
+    return;
+  }
+
+  ensureShadowStyle(
+    shadow,
+    "moment-circle-base-form-style",
+    `.form-inputs{grid-template-columns:minmax(0,1fr)!important;}.form-login-link,input[name="email"],input[name="website"]{display:none!important;}.form-account{gap:.75rem!important;}.form-account-avatar.avatar{width:2.5rem!important;height:2.5rem!important;border-radius:999px!important;overflow:hidden;}.form-account-avatar.avatar img{width:100%;height:100%;object-fit:cover;}.form__footer{align-items:center;gap:1rem!important;}.form-account-name{font-size:1rem!important;}`
+  );
+
+  const displayNameInput = shadow.querySelector('input[name="displayName"]');
+  if (displayNameInput) {
+    displayNameInput.placeholder = "昵称";
+    displayNameInput.maxLength = 32;
+    displayNameInput.autocomplete = "nickname";
+  }
+
+  const emailInput = shadow.querySelector('input[name="email"]');
+  if (emailInput) {
+    emailInput.required = false;
+    emailInput.value = "";
+    emailInput.tabIndex = -1;
+    emailInput.setAttribute("aria-hidden", "true");
+  }
+
+  const websiteInput = shadow.querySelector('input[name="website"]');
+  if (websiteInput) {
+    websiteInput.value = "";
+    websiteInput.tabIndex = -1;
+    websiteInput.setAttribute("aria-hidden", "true");
+  }
+
+  const accountName = shadow.querySelector(".form-account-name");
+  if (accountName && formElement.currentUser) {
+    accountName.textContent =
+      formElement.currentUser?.spec?.displayName ||
+      formElement.currentUser?.metadata?.name ||
+      accountName.textContent;
+  }
+}
+
+function buildCommentWidgetConfig() {
+  return {
+    basic: {
+      size: 20,
+      withReplies: true,
+      replySize: 10,
+      enablePrivateComment: false,
+    },
+    editor: {
+      placeholder: "说点什么吧...",
+    },
+    security: {
+      captcha: {
+        anonymousCommentCaptcha: false,
+      },
+    },
+    avatar: {
+      enable: false,
+      provider: "gravatar",
+      providerMirror: "",
+      policy: "anonymousUser",
+    },
+  };
+}
+
+function guestEmail(displayName) {
+  const seed = encodeURIComponent(String(displayName || "guest").trim())
+    .replace(/%/g, "")
+    .slice(0, 24);
+  return `${seed || `guest${Date.now()}`}@moment.local`;
+}
+
+async function refreshMoment(name) {
+  try {
+    const moment = await getJson(`${APP.apiBase}/moments/${encodeURIComponent(name)}`);
+    cacheMoment(moment);
+    syncOne(name);
+  } catch (error) {
+    console.warn(error);
+  }
+}
+
+async function loadFeedActivity(name) {
+  const box = find(`[data-feed-comments="${sel(name)}"]`);
+  const moment = state.moments.get(name);
+  if (!box || !moment) {
+    return;
+  }
+
+  try {
+    const result = await loadComments(name, 1, 3, 1);
+    const items = Array.isArray(result.items) ? result.items : [];
+    const likeCount = Number(moment.stats?.upvote || 0);
+
+    if (!likeCount && !items.length) {
+      box.style.display = "none";
+      box.innerHTML = "";
+      return;
+    }
+
+    box.innerHTML = `${
+      likeCount
+        ? `<div class="moment-likes"><span class="moment-likes-icon">❤</span><span class="moment-likes-text" data-like-summary="${ea(
+            name
+          )}">${eh(likeText(name, likeCount))}</span></div>`
+        : ""
+    }${
+      items.length
+        ? `<div class="wechat-comments-list">${items
+            .slice(0, 3)
+            .map(
+              (comment) =>
+                `<div class="wechat-comment-item"><div class="wechat-main"><span class="wechat-nick">${eh(
+                  comment.owner?.displayName || comment.owner?.name || "游客"
+                )}</span><span class="wechat-colon">：</span><span class="wechat-content">${eh(
+                  trim(strip(comment.spec?.content || comment.spec?.raw || ""), 90)
+                )}</span></div><span class="wechat-time">${relativeTime(
+                  comment.spec?.creationTime
+                )}</span></div>`
+            )
+            .join("")}</div>`
+        : ""
+    }`;
+    box.style.display = "block";
+  } catch (error) {
+    console.warn(error);
+    if (Number(moment.stats?.upvote || 0) > 0) {
+      box.innerHTML = `<div class="moment-likes"><span class="moment-likes-icon">❤</span><span class="moment-likes-text" data-like-summary="${ea(
+        name
+      )}">${eh(likeText(name, Number(moment.stats?.upvote || 0)))}</span></div>`;
+      box.style.display = "block";
+    }
+  }
+}
+
+async function loadComments(name, page, size, replySize) {
+  const url = new URL(COMMENT_API_BASE, window.location.origin);
+  url.searchParams.set("version", "v1alpha1");
+  url.searchParams.set("kind", "Moment");
+  url.searchParams.set("group", "moment.halo.run");
+  url.searchParams.set("name", name);
+  url.searchParams.set("page", String(page));
+  url.searchParams.set("size", String(size));
+  url.searchParams.set("withReplies", "true");
+  url.searchParams.set("replySize", String(replySize));
+  return getJson(url.toString());
+}
+
+function cacheMoment(moment) {
+  state.moments.set(nameOf(moment), moment);
+}
+
+function syncDisplays() {
+  Array.from(state.moments.keys()).forEach(syncOne);
+}
+
+function syncOne(name) {
+  const moment = state.moments.get(name);
+  if (!moment) {
+    return;
+  }
+
+  findAll(`[data-upvote-label="${sel(name)}"]`).forEach((node) => {
+    node.textContent = `赞 ${Number(moment.stats?.upvote || 0)}`;
+  });
+  findAll(`[data-comment-label="${sel(name)}"]`).forEach((node) => {
+    node.textContent = `评 ${Number(moment.stats?.approvedComment || 0)}`;
+  });
+  findAll(`[data-like-summary="${sel(name)}"]`).forEach((node) => {
+    node.textContent = likeText(name, Number(moment.stats?.upvote || 0));
+  });
+  findAll(`[data-name="${sel(name)}"]`)
+    .filter((node) => node.matches('[data-action="like"]'))
+    .forEach((node) => {
+      const active = liked(name);
+      node.classList.toggle("is-liked", active);
+      node.textContent = active ? "已赞" : "点赞";
+    });
+}
+
+function adjustUpvote(name, delta) {
+  const moment = state.moments.get(name);
+  if (!moment) {
+    return;
+  }
+  moment.stats = moment.stats || {};
+  moment.stats.upvote = Math.max(0, Number(moment.stats.upvote || 0) + delta);
+}
+
+function likeText(name, count) {
+  if (count <= 0) {
+    return "";
+  }
+  if (!liked(name)) {
+    return `已有 ${count} 人点赞`;
+  }
+  return count === 1 ? "你觉得很赞" : `你和其他 ${count - 1} 人觉得很赞`;
+}
+
+function applyPageConfig(config) {
+  document.documentElement.style.setProperty("--theme-color", config.accentColor);
+  heroTitle.textContent = config.profileName;
+  heroSignature.textContent = config.signature;
+  heroSignature.style.display = config.signature ? "" : "none";
+  footer.textContent = config.footerText;
+  heroAvatarImage.src = config.avatarUrl || fallbackAvatar(config.profileName || "瞬");
+  heroCover.style.backgroundImage = config.coverUrl
+    ? `url("${ea(config.coverUrl)}")`
+    : "linear-gradient(120deg, #89d5aa 0%, #07c160 100%)";
+}
+
+function renderTagStrip(tags, currentTag) {
+  const list = Array.isArray(tags) ? tags : [];
+  if (!list.length) {
+    tagStrip.classList.add("is-hidden");
+    return;
+  }
+
+  tagStrip.classList.remove("is-hidden");
+  tagStrip.innerHTML = [
+    `<a class="tag-pill ${currentTag ? "" : "is-active"}" href="${buildListUrl(
+      1,
+      ""
+    )}">全部</a>`,
+    ...list.map(
+      (tag) =>
+        `<a class="tag-pill ${
+          currentTag === tag.name ? "is-active" : ""
+        }" href="${buildListUrl(1, tag.name)}"><span>#${eh(
+          tag.name || ""
+        )}</span><span>${Number(tag.momentCount || 0)}</span></a>`
+    ),
+  ].join("");
+}
+
+function renderPager(result, tag) {
+  if (!result.totalPages || result.totalPages <= 1) {
+    return "";
+  }
+
+  return `<section class="empty-panel">${
+    result.hasPrevious
+      ? `<a class="moment-detail-link" href="${buildListUrl(
+          result.page - 1,
+          tag
+        )}">上一页</a>`
+      : ""
+  }<span>第 ${result.page} / ${result.totalPages} 页</span>${
+    result.hasNext
+      ? `<a class="moment-detail-link" href="${buildListUrl(
+          result.page + 1,
+          tag
+        )}">下一页</a>`
+      : ""
+  }</section>`;
+}
+
+function renderFeedGallery(list) {
+  if (!list.length) {
+    return "";
+  }
+
+  const viewerList = ea(JSON.stringify(list));
+  if (list.length === 1) {
+    return `<div class="moment-gallery"><div class="gallery-single"><img data-viewer-list="${viewerList}" data-viewer-index="0" src="${ea(
+      list[0]
+    )}" alt="瞬间图片" loading="lazy"></div></div>`;
+  }
+
+  const gridClass = list.length === 2 || list.length === 4 ? "cols-2" : "cols-3";
+  return `<div class="moment-gallery"><div class="gallery-grid ${gridClass}">${list
+    .map(
+      (image, index) =>
+        `<div class="gallery-item"><img data-viewer-list="${viewerList}" data-viewer-index="${index}" src="${ea(
+          image
+        )}" alt="瞬间图片" loading="lazy"></div>`
+    )
+    .join("")}</div></div>`;
+}
+
+function renderDetailGallery(moment) {
+  const list = photosOf(moment);
+  const media = otherMediaOf(moment);
+  const viewerList = ea(JSON.stringify(list));
+
+  return `${
+    list.length
+      ? `<div class="article-gallery">${list
+          .map(
+            (image, index) =>
+              `<figure class="article-image"><img data-viewer-list="${viewerList}" data-viewer-index="${index}" src="${ea(
+                image
+              )}" alt="瞬间图片" loading="lazy"></figure>`
+          )
+          .join("")}</div>`
+      : ""
+  }${renderMediaStack(media)}`;
+}
+
+function renderMediaStack(items) {
+  if (!items.length) {
+    return "";
+  }
+
+  return `<div class="moment-media-stack">${items
+    .map((item) => {
+      if (item.type === "VIDEO") {
+        return `<video controls preload="metadata" src="${ea(item.url || "")}"></video>`;
+      }
+      if (item.type === "AUDIO") {
+        return `<audio controls preload="metadata" src="${ea(item.url || "")}"></audio>`;
+      }
+      return "";
+    })
+    .join("")}</div>`;
+}
+
+function renderTags(tags) {
+  const list = Array.isArray(tags) ? tags : [];
+  return list.length
+    ? `<span class="moment-tags">${list
+        .map(
+          (tag) =>
+            `<a class="moment-tag" href="${buildListUrl(1, tag)}">#${eh(tag)}</a>`
+        )
+        .join("")}</span>`
+    : "";
+}
+
+function renderTagText(tags) {
+  const list = Array.isArray(tags) ? tags : [];
+  return list.length ? `<span>${list.map((tag) => `#${eh(tag)}`).join(" ")}</span>` : "";
+}
+
+function renderRaw(html, raw) {
+  return html && String(html).trim()
+    ? html
+    : `<p>${eh(raw || "这条瞬间暂时没有正文。").replace(/\n/g, "<br>")}</p>`;
+}
+
+function photosOf(moment) {
+  return mediaOf(moment)
+    .filter((item) => item.type === "PHOTO")
+    .map((item) => item.url)
+    .filter(Boolean);
+}
+
+function otherMediaOf(moment) {
+  return mediaOf(moment).filter((item) => item.type !== "PHOTO");
+}
+
+function mediaOf(moment) {
+  const content = moment?.spec?.content;
+  return Array.isArray(content?.medium) ? content.medium : [];
+}
+
+function normalizeConfig(config) {
+  return {
+    title: config?.title || "瞬间",
+    pageSize: Number(config?.pageSize || 10),
+    profileName: config?.profileName || "恪勤",
+    signature: config?.signature || "",
+    avatarUrl: config?.avatarUrl || "",
+    coverUrl: config?.coverUrl || "",
+    footerText: config?.footerText || "由 Halo 瞬间插件驱动",
+    accentColor: config?.accentColor || "#07c160",
+    tags: Array.isArray(config?.tags) ? config.tags : [],
+  };
+}
+
+function deriveMomentTitle(moment) {
+  const text = strip(moment?.spec?.content?.html || moment?.spec?.content?.raw || "")
+    .trim();
+  if (!text) {
+    return formatDateTime(moment?.spec?.releaseTime);
+  }
+  return text.length > 32 ? `${text.slice(0, 32)}...` : text;
+}
+
+function buildListUrl(page, tag) {
+  const path = page > 1 ? `${HOME_PATH}/page/${page}` : HOME_PATH;
+  return tag ? `${path}?tag=${encodeURIComponent(tag)}` : path;
+}
+
+function bindViewer() {
+  if (!viewer) {
+    return;
+  }
+
+  viewerClose?.addEventListener("click", closeViewer);
+  viewerPrev?.addEventListener("click", () => stepViewer(-1));
+  viewerNext?.addEventListener("click", () => stepViewer(1));
+  viewer.addEventListener("click", (event) => {
+    if (event.target === viewer) {
+      closeViewer();
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (viewer.classList.contains("is-hidden")) {
+      return;
+    }
+    if (event.key === "Escape") {
+      closeViewer();
+    } else if (event.key === "ArrowLeft") {
+      stepViewer(-1);
+    } else if (event.key === "ArrowRight") {
+      stepViewer(1);
+    }
+  });
+}
+
+function parseViewerList(raw) {
+  try {
+    const list = JSON.parse(raw || "[]");
+    return Array.isArray(list) ? list.filter(Boolean) : [];
+  } catch (_) {
+    return [];
+  }
+}
+
+function openViewer(images, index) {
+  if (!Array.isArray(images) || !images.length) {
+    return;
+  }
+  state.viewer.images = images.filter(Boolean);
+  state.viewer.index = clamp(index, 0, state.viewer.images.length - 1);
+  state.viewer.previousOverflow = document.body.style.overflow;
+  document.body.style.overflow = "hidden";
+  renderViewer();
+  viewer.classList.remove("is-hidden");
+  viewer.setAttribute("aria-hidden", "false");
+}
+
+function renderViewer() {
+  const total = state.viewer.images.length;
+  if (!total) {
+    return;
+  }
+
+  const current = state.viewer.images[state.viewer.index];
+  viewerBody.innerHTML = `<img src="${ea(current)}" alt="瞬间预览大图">`;
+  viewerCounter.textContent = `${state.viewer.index + 1} / ${total}`;
+  viewerPrev.disabled = total <= 1;
+  viewerNext.disabled = total <= 1;
+  viewerThumbs.innerHTML =
+    total > 1
+      ? state.viewer.images
+          .map(
+            (image, index) =>
+              `<button class="viewer__thumb ${
+                index === state.viewer.index ? "is-active" : ""
+              }" type="button" data-viewer-thumb="${index}"><img src="${ea(
+                image
+              )}" alt="预览缩略图"></button>`
+          )
+          .join("")
+      : "";
+  viewerThumbs
+    .querySelectorAll("[data-viewer-thumb]")
+    .forEach((button) =>
+      button.addEventListener("click", () => {
+        state.viewer.index = Number(button.getAttribute("data-viewer-thumb") || 0);
+        renderViewer();
+      })
+    );
+}
+
+function stepViewer(delta) {
+  const total = state.viewer.images.length;
+  if (total <= 1) {
+    return;
+  }
+  state.viewer.index = (state.viewer.index + delta + total) % total;
+  renderViewer();
+}
+
+function closeViewer() {
+  viewer.classList.add("is-hidden");
+  viewer.setAttribute("aria-hidden", "true");
+  viewerBody.innerHTML = "";
+  viewerCounter.textContent = "";
+  viewerThumbs.innerHTML = "";
+  state.viewer.images = [];
+  state.viewer.index = 0;
+  document.body.style.overflow = state.viewer.previousOverflow || "";
+}
+
+async function getJson(url) {
+  return request(url, { method: "GET" }, true);
+}
+
+async function postJson(url, body, json = true) {
+  return request(
+    url,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    },
+    json
+  );
+}
+
+async function request(url, options, expectJson) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers: {
+      Accept: "application/json",
+      ...(options.headers || {}),
+    },
+    ...options,
+  });
+  if (!response.ok) {
+    throw new Error(await readErr(response));
+  }
+  if (!expectJson) {
+    return null;
+  }
+  const contentType = response.headers.get("content-type") || "";
+  return contentType.includes("application/json") ? response.json() : null;
+}
+
+async function readErr(response) {
+  const fallback = `Request failed: ${response.status}`;
+  try {
+    const text = await response.text();
+    if (!text) {
+      return fallback;
+    }
+    try {
+      const data = JSON.parse(text);
+      return data.message || data.detail || data.title || data.error || fallback;
+    } catch (_) {
+      return text.length > 160 ? fallback : text;
+    }
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function showToast(message) {
+  if (!toastHost || !message) {
+    return;
+  }
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = message;
+  toastHost.appendChild(toast);
+  window.setTimeout(() => toast.remove(), 2400);
+}
+
+function readStorage(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (_) {
+    return fallback;
+  }
+}
+
+function writeStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (_) {}
+}
+
+function liked(name) {
+  return !!state.likes?.[name];
+}
+
+function setLiked(name, on) {
+  state.likes = state.likes || {};
+  if (on) {
+    state.likes[name] = true;
+  } else {
+    delete state.likes[name];
+  }
+  writeStorage("momentCircle.likes", state.likes);
+}
+
+function nameOf(moment) {
+  return moment?.metadata?.name || "";
+}
+
+function fallbackAvatar(text) {
+  const character = (text || "瞬").trim().slice(0, 1) || "瞬";
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><defs><linearGradient id="g" x1="0%" x2="100%" y1="0%" y2="100%"><stop stop-color="#7bcfa5" offset="0%"/><stop stop-color="#07c160" offset="100%"/></linearGradient></defs><rect width="120" height="120" rx="18" fill="url(#g)"/><text x="50%" y="56%" text-anchor="middle" dominant-baseline="middle" font-family="PingFang SC, Microsoft YaHei, sans-serif" font-size="56" fill="#ffffff">${eh(
+      character
+    )}</text></svg>`
+  )}`;
+}
+
+function formatDate(value) {
+  if (!value) {
+    return "刚刚";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return "刚刚";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function relativeTime(value) {
+  if (!value) {
+    return "刚刚";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  const diff = Date.now() - date.getTime();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+  const day = 24 * hour;
+
+  if (diff < minute) {
+    return "刚刚";
+  }
+  if (diff < hour) {
+    return `${Math.max(1, Math.floor(diff / minute))} 分钟前`;
+  }
+  if (diff < day) {
+    return `${Math.max(1, Math.floor(diff / hour))} 小时前`;
+  }
+  if (diff < day * 2) {
+    return "昨天";
+  }
+  return `${date.getMonth() + 1} 月 ${date.getDate()} 日`;
+}
+
+function trim(value, max) {
+  const text = String(value || "")
+    .trim()
+    .replace(/\s+/g, " ");
+  return text.length <= max ? text : `${text.slice(0, max)}...`;
+}
+
+function strip(value) {
+  return String(value || "").replace(/<[^>]+>/g, " ");
+}
+
+function renderError(message) {
+  root.innerHTML = `<section class="error-panel"><h2>加载失败</h2><p>${eh(
+    message
+  )}</p></section>`;
+}
+
+function ensureShadowStyle(shadowRoot, id, cssText) {
+  if (shadowRoot.getElementById(id)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = cssText;
+  shadowRoot.appendChild(style);
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function find(selector) {
+  return document.querySelector(selector);
+}
+
+function findAll(selector) {
+  return Array.from(document.querySelectorAll(selector));
+}
+
+function eh(value) {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function ea(value) {
+  return eh(value).replaceAll("`", "&#96;");
+}
+
+function sel(value) {
+  return String(value || "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"');
+}
+
+function escapeHtml(value) {
+  return eh(value);
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}

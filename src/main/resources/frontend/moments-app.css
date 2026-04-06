@@ -1203,3 +1203,234 @@ blockquote {
     gap: 2px;
   }
 }
+
+.main-wrapper,
+.comment-widget-shell,
+.comment-widget-card {
+  --halo-cw-primary-1-color: var(--theme-color);
+  --halo-cw-primary-2-color: #05944b;
+  --halo-cw-primary-3-color: #04763c;
+  --halo-cw-text-1-color: #1f1f1f;
+  --halo-cw-text-2-color: #444444;
+  --halo-cw-text-3-color: #6b7280;
+  --halo-cw-muted-1-color: #d5d7db;
+  --halo-cw-muted-2-color: #eceef1;
+  --halo-cw-muted-3-color: #f5f6f7;
+  --halo-cw-base-rounded: 10px;
+}
+
+.moment-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.moment-action-btn {
+  border: 1px solid var(--border-main);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text-link);
+  padding: 6px 14px;
+  font-size: 13px;
+  line-height: 1.2;
+  cursor: pointer;
+  transition: background-color 0.2s ease, border-color 0.2s ease,
+    color 0.2s ease;
+}
+
+.moment-action-btn:hover,
+.moment-action-btn.is-liked {
+  border-color: rgba(7, 193, 96, 0.2);
+  background: rgba(7, 193, 96, 0.12);
+  color: var(--theme-color);
+}
+
+.moment-action-btn[disabled] {
+  opacity: 0.68;
+  cursor: not-allowed;
+}
+
+.feed-comment-panel {
+  margin-top: 12px;
+}
+
+.feed-comment-panel .loading-panel,
+.comment-widget-card .loading-panel {
+  margin-top: 0;
+}
+
+.comment-widget-card,
+.comment-widget-shell {
+  width: 100%;
+  padding: 14px;
+  border: 1px solid var(--border-main);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.comment-widget-shell.is-compact {
+  padding: 12px;
+}
+
+.comment-widget-shell comment-widget,
+.comment-widget-card comment-widget {
+  display: block;
+  width: 100%;
+}
+
+.detail-comments {
+  margin-top: 24px;
+}
+
+.detail-comments-header {
+  margin-bottom: 14px;
+}
+
+.detail-comments-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.viewer {
+  gap: 16px;
+  padding: 20px;
+}
+
+.viewer__dialog {
+  width: min(100%, 1080px);
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.viewer__topbar {
+  display: flex;
+  justify-content: center;
+}
+
+.viewer__counter {
+  min-width: 88px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.14);
+  color: #ffffff;
+  font-size: 13px;
+  text-align: center;
+}
+
+.viewer__body {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.viewer__body img {
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 220px);
+  object-fit: contain;
+  border-radius: 12px;
+}
+
+.viewer__nav {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: #ffffff;
+  font-size: 34px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.viewer__nav[disabled] {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.viewer__thumbs {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.viewer__thumb {
+  flex: none;
+  width: 58px;
+  height: 58px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+}
+
+.viewer__thumb.is-active {
+  border-color: rgba(255, 255, 255, 0.88);
+}
+
+.viewer__thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (max-width: 640px) {
+  .moment-actions {
+    justify-content: flex-start;
+  }
+
+  .moment-action-btn {
+    padding: 6px 12px;
+  }
+
+  .comment-widget-card,
+  .comment-widget-shell {
+    padding: 10px;
+  }
+
+  .viewer {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .viewer__dialog {
+    gap: 10px;
+  }
+
+  .viewer__body img {
+    max-height: calc(100vh - 190px);
+  }
+
+  .viewer__nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    font-size: 28px;
+  }
+
+  .viewer__nav--prev {
+    left: 10px;
+  }
+
+  .viewer__nav--next {
+    right: 10px;
+  }
+
+  .viewer__thumb {
+    width: 48px;
+    height: 48px;
+  }
+}
