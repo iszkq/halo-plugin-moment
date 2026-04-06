@@ -24,7 +24,7 @@ import reactor.core.publisher.Mono;
  */
 @Component
 public class MomentRouter {
-    private static final String ASSET_VERSION = "v1.2.7";
+    private static final String ASSET_VERSION = "v1.2.8";
     private static final String APP_HTML = "frontend/moments-app.html";
     private static final String APP_CSS = "frontend/moments-app.css";
     private static final String APP_JS = "frontend/moments-app.js";
@@ -52,7 +52,7 @@ public class MomentRouter {
                 request -> ServerResponse.ok()
                     .contentType(MediaType.APPLICATION_JSON)
                     .bodyValue(Map.of(
-                        "version", "1.2.7",
+                        "version", "1.2.8",
                         "htmlExists", classpathResource(APP_HTML).exists(),
                         "cssExists", classpathResource(APP_CSS).exists(),
                         "jsExists", classpathResource(APP_JS).exists(),

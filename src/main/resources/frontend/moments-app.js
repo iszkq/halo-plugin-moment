@@ -1,5 +1,6 @@
 const APP = window.__MOMENT_CIRCLE__ || {};
 const HOME_PATH = APP.homePath || "/moments";
+const SITE_HOME = APP.siteHome || "/";
 const COMMENT_API_BASE =
   APP.commentApiBase || "/apis/api.halo.run/v1alpha1/comments";
 const METRICS_API_BASE =
@@ -212,13 +213,14 @@ function renderMomentCard(moment) {
   const avatar =
     moment.owner?.avatar ||
     fallbackAvatar(moment.owner?.displayName || moment.owner?.name || "瞬");
+  const authorHomeLink = SITE_HOME;
   const detailLink = `${HOME_PATH}/${encodeURIComponent(name)}`;
 
   return `<article class="moment-card" id="moment-${ea(
     name
-  )}"><aside class="moment-aside"><a class="avatar-link" href="${detailLink}"><img class="avatar-img" src="${ea(
+  )}"><aside class="moment-aside"><a class="avatar-link" href="${authorHomeLink}"><img class="avatar-img" src="${ea(
     avatar
-  )}" alt="${owner}" loading="lazy"></a></aside><div class="moment-body"><h2 class="moment-author"><a href="${detailLink}">${owner}</a></h2><div class="moment-text-wrapper"><div class="moment-text is-collapsed">${renderRaw(
+  )}" alt="${owner}" loading="lazy"></a></aside><div class="moment-body"><h2 class="moment-author"><a href="${authorHomeLink}">${owner}</a></h2><div class="moment-text-wrapper"><div class="moment-text is-collapsed">${renderRaw(
     moment.spec?.content?.html,
     moment.spec?.content?.raw
   )}</div><button class="text-toggle" type="button">全文</button></div>${renderFeedGallery(
