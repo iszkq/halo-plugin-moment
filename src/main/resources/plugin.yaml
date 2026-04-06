@@ -1,0 +1,25 @@
+apiVersion: plugin.halo.run/v1alpha1
+kind: Plugin
+metadata:
+  name: PluginMomentCircle
+  annotations:
+    "store.halo.run/app-id": "app-local-moment-circle"
+spec:
+  enabled: true
+  requires: ">=2.22.0"
+  author:
+    name: 恪勤
+    website: https://github.com/iszkq
+  logo: logo.svg
+  configMapName: plugin-moment-circle-configmap
+  settingName: plugin-moment-circle-settings
+  homepage: https://github.com/iszkq/halo-plugin-moment
+  repo: https://github.com/iszkq/halo-plugin-moment
+  issues: https://github.com/iszkq/halo-plugin-moment/issues
+  displayName: "瞬间"
+  description: "面向 Halo 的瞬间插件，内置仿微信朋友圈风格的前台渲染页与瞬间后台管理能力。"
+  pluginDependencies:
+    "PluginFeed?": ">=1.4.0"
+  license:
+    - name: "GPL-3.0"
+      url: "https://github.com/halo-sigs/plugin-moments/blob/main/LICENSE"

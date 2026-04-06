@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>瞬间</title>
+  <link rel="stylesheet" href="/plugins/moment-circle/static/v1.2.4/moments-app.css">
+</head>
+<body>
+  <div class="main-wrapper">
+    <header id="hero" class="moments-header">
+      <div id="hero-cover" class="moments-header-media"></div>
+      <div class="header-user">
+        <div class="header-avatar">
+          <img id="hero-avatar-image" src="" alt="avatar">
+        </div>
+        <div class="header-info">
+          <h1 id="hero-title" class="header-name">瞬间</h1>
+        </div>
+      </div>
+    </header>
+
+    <div id="hero-signature" class="header-signature">正在加载页面资料...</div>
+
+    <nav id="detail-nav" class="nav-back is-hidden">
+      <a id="toolbar-back" href="/moments">返回瞬间</a>
+    </nav>
+
+    <section id="tag-strip" class="tag-filter is-hidden"></section>
+
+    <main id="app-root" class="moments-feed">
+      <section class="loading-panel">
+        <div class="loading-panel__glow"></div>
+        <p>瞬间页面加载中...</p>
+      </section>
+    </main>
+
+    <footer id="page-footer" class="site-footer">由 Halo 瞬间插件驱动</footer>
+  </div>
+
+  <div id="viewer" class="viewer is-hidden" aria-hidden="true">
+    <button id="viewer-close" class="viewer__close" type="button" aria-label="关闭预览">×</button>
+    <div id="viewer-body" class="viewer__body"></div>
+  </div>
+
+  <div id="toast-host" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+
+  <script>
+    window.__MOMENT_CIRCLE__ = {
+      apiBase: "/apis/api.moment.halo.run/v1alpha1",
+      configEndpoint: "/apis/api.moment.halo.run/v1alpha1/page-config",
+      commentApiBase: "/apis/api.halo.run/v1alpha1/comments",
+      metricsApiBase: "/apis/api.halo.run/v1alpha1/trackers",
+      homePath: "/moments"
+    };
+  </script>
+  <script src="/plugins/moment-circle/static/v1.2.4/moments-app.js" defer></script>
+</body>
+</html>

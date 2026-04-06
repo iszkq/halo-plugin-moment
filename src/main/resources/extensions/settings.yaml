@@ -1,0 +1,46 @@
+apiVersion: v1alpha1
+kind: Setting
+metadata:
+  name: plugin-moment-circle-settings
+spec:
+  forms:
+    - group: base
+      label: 基本设置
+      formSchema:
+        - $formkit: text
+          label: 页面标题
+          name: title
+          validation: required
+          value: '瞬间'
+        - $formkit: text
+          label: 列表每页显示条数
+          name: pageSize
+          validation: required|Number
+          value: 10
+    - group: profile
+      label: 页面资料
+      formSchema:
+        - $formkit: text
+          label: 顶部昵称
+          name: profileName
+          value: '恪勤'
+        - $formkit: textarea
+          label: 个性签名
+          name: signature
+          value: '记录日常、碎片灵感和生活感受。'
+        - $formkit: url
+          label: 顶部头像地址
+          name: avatarUrl
+          value: ''
+        - $formkit: url
+          label: 封面图地址
+          name: coverUrl
+          value: ''
+        - $formkit: text
+          label: 页脚文案
+          name: footerText
+          value: '由 Halo 朋友圈插件驱动'
+        - $formkit: color
+          label: 强调色
+          name: accentColor
+          value: '#07c160'
