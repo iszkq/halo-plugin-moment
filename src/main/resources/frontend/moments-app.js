@@ -289,23 +289,24 @@ function bindLikes() {
         return;
       }
 
-      button.disabled = true;
       const alreadyLiked = liked(name);
+      if (alreadyLiked) {
+        showToast("你已经点过赞了");
+        return;
+      }
+
+      button.disabled = true;
 
       try {
-        await postJson(
-          `${METRICS_API_BASE}/${alreadyLiked ? "downvote" : "upvote"}`,
-          {
-            group: "moment.halo.run",
-            plural: "moments",
-            name,
-          },
-          false
-        );
-        setLiked(name, !alreadyLiked);
-        adjustUpvote(name, alreadyLiked ? -1 : 1);
+        await postJson(`${METRICS_API_BASE}/upvote`, {
+          group: "moment.halo.run",
+          plural: "moments",
+          name,
+        }, false);
+        setLiked(name, true);
+        adjustUpvote(name, 1);
         syncOne(name);
-        showToast(alreadyLiked ? "已取消点赞" : "点赞成功");
+        showToast("点赞成功");
         await refreshMoment(name);
         await loadFeedActivity(name);
       } catch (error) {
